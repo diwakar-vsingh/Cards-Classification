@@ -121,9 +121,9 @@ class CardsDataModule(LightningDataModule):
         self.shuffle = shuffle
         self.pin_memory = pin_memory
         self.drop_last = drop_last
-        self.train_transforms = train_transforms
-        self.valid_transforms = val_transforms
-        self.test_transforms = test_transforms
+        self.train_transform = train_transforms
+        self.valid_transform = val_transforms
+        self.test_transform = test_transforms
 
     def prepare_data(self) -> None:
         # download and split the data
@@ -136,21 +136,19 @@ class CardsDataModule(LightningDataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         # called on every process in DDP
         if stage == "fit" or stage is None:
-            train_transforms = (
-                self.default_transforms()
-                if self.train_transforms is None
-                else self.train_transforms
-            )
+            train_transforms = self.train_transform or self.default_transforms()
+            valid_transforms = self.valid_transform or self.test_transforms()
             self.train_dataset = CardsDataset(
                 self.data_dir, split="train", transform=train_transforms
             )
             self.valid_dataset = CardsDataset(
-                self.data_dir, split="valid", transform=self.valid_transforms
+                self.data_dir, split="valid", transform=valid_transforms
             )
 
         if stage == "test" or stage is None:
+            test_transform = self.test_transform or self.test_transforms()
             self.test_dataset = CardsDataset(
-                self.data_dir, split="test", transform=self.test_transforms
+                self.data_dir, split="test", transform=test_transform
             )
 
     def default_transforms(self) -> Callable:
@@ -158,7 +156,6 @@ class CardsDataModule(LightningDataModule):
             [T.Normalize(MEAN, STD)] if self.normalize else []
         )
         transforms += [
-            T.Normalize(MEAN, STD),
             T.RandomAutocontrast(p=0.2),
             T.RandomAdjustSharpness(sharpness_factor=2.0, p=0.2),
             T.RandomInvert(p=0.1),
@@ -178,6 +175,11 @@ class CardsDataModule(LightningDataModule):
         ]
         return T.Compose(transforms)
 
+    def test_transforms(self) -> Callable:
+        transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224))]
+        transforms += [T.Normalize(MEAN, STD)] if self.normalize else []
+        return T.Compose(transforms)
+
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
@@ -192,10 +194,8 @@ class CardsDataModule(LightningDataModule):
         return DataLoader(
             self.valid_dataset,
             batch_size=self.batch_size,
-            shuffle=self.shuffle,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            drop_last=self.drop_last,
         )
 
     def test_dataloader(self) -> DataLoader:
