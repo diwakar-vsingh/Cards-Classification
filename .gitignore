@@ -1,6 +1,7 @@
 /.DS_Store
-../data/..
 **.egg-info/**
-data/**
-lightning_logs/**
 **/__pycache__/**
+/data/**
+/Cards Classifier/**
+/lightning_logs/**
+/wandb/**
