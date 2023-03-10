@@ -1,0 +1,6 @@
+/.DS_Store
+../data/..
+**.egg-info/**
+data/**
+lightning_logs/**
+**/__pycache__/**
