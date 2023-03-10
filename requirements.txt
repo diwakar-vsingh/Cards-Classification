@@ -4,3 +4,4 @@ numpy==1.24.2
 pytorch-lightning==1.9.4
 torch==1.13.1
 torchvision==0.14.1
+wandb==0.13.11

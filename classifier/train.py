@@ -3,6 +3,8 @@ from pathlib import Path
 
 import click
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 
 from classifier.dataset import CardsDataModule
 from classifier.model import Model
@@ -38,12 +40,34 @@ from classifier.model import Model
     default=1e-5,
     help="Learning rate for training",
 )
+@click.option(
+    "-e",
+    "--expt-name",
+    required=True,
+    help="Name of the experiment",
+)
 def main(
     data_dir: Path,
     normalize: bool,
     batch_size: int,
     learning_rate: float,
+    expt_name: str,
 ):
+    # Init logger
+    wandb_logger = WandbLogger(
+        name=expt_name, project="Cards Classifier", log_model="all"
+    )
+
+    # Callbacks
+    checkpoint_callback = ModelCheckpoint(monitor="val_acc", mode="max", verbose=True)
+    early_stop_callback = EarlyStopping(
+        monitor="val_acc",
+        min_delta=0.00,
+        patience=3,
+        verbose=False,
+        mode="max",
+    )
+
     # Init DataModule
     dm = CardsDataModule(
         data_dir=data_dir,
@@ -57,9 +81,11 @@ def main(
 
     # Init trainer
     trainer = pl.Trainer(
-        max_epochs=5,
+        max_epochs=-1,
         accelerator="auto",
         devices=None,
+        logger=wandb_logger,
+        callbacks=[early_stop_callback, checkpoint_callback],
     )
 
     # Pass the datamodule as arg to trainer.fit to override model hooks :)
