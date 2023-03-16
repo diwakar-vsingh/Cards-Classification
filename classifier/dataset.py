@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from torchvision.io import read_image
 
-from .constant import MEAN, STD
+from classifier.constant import MEAN, STD
 
 
 def download_kaggle_dataset(dataset_name: str, dataset_path: Path) -> None:
@@ -76,17 +76,17 @@ class CardsDataset(VisionDataset):
         image_path: str = str(self.image_paths[idx])
         label: str = self.labels[idx]
         try:
-            image = read_image(image_path).float() / 255.0
+            image: torch.Tensor = read_image(image_path).float() / 255.0
         except RuntimeError:
             return self.__getitem__(random.randint(0, len(self)))
 
-        if self.transform:
-            image = self.transform(image)
+        input_transform = self.transform or T.ToTensor()
+        image_t = input_transform(image)
 
-        target_transform = self.target_transform or torch.tensor
-        label = target_transform(label)
+        target_transform = self.target_transform or torch.as_tensor
+        label_t = target_transform(label)
 
-        return image, label
+        return (image_t, label_t)
 
 
 class CardsDataModule(LightningDataModule):
