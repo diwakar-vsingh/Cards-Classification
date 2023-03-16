@@ -1,9 +1,11 @@
+from functools import partial
 from typing import Tuple
 
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from torchmetrics.functional import accuracy
+from torchvision.models import ResNet18_Weights, resnet18
 
 
 class Model(pl.LightningModule):
@@ -13,6 +15,7 @@ class Model(pl.LightningModule):
         num_classes: int = 53,
         hidden_size: int = 64,
         learning_rate: float = 1e-3,
+        feature_extractor: bool = False,
     ):
         super().__init__()
 
@@ -22,10 +25,13 @@ class Model(pl.LightningModule):
         self.hidden_size = hidden_size
 
         # Design model
-        self.model = self.create_model()
+        self.model = self.create_model(feature_extractor)
 
         # Loss function
         self.loss = nn.CrossEntropyLoss()
+
+        # Metric
+        self.metric = partial(accuracy, task="multiclass", num_classes=self.num_classes)
 
         # Optimizer Parameters
         self.learning_rate = learning_rate
@@ -33,20 +39,19 @@ class Model(pl.LightningModule):
         # Save hyperparameters to self.hparams (auto-logged by WandbLogger)
         self.save_hyperparameters()
 
-    def create_model(self) -> nn.Module:
-        """Create a simple MLP model"""
-        model = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(
-                self.channels * self.width * self.height, self.hidden_size
-            ),  # 224 * 224 = 50176 -> 64
-            nn.ReLU(),
-            nn.Linear(self.hidden_size, self.hidden_size),  # 64 -> 64
-            nn.ReLU(),
-            nn.Linear(self.hidden_size, self.num_classes),  # 64 -> 53
-            nn.Softmax(dim=1),
-        )
+    def create_model(self, feature_extractor: bool) -> nn.Module:
+        """Create model"""
+        model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        if feature_extractor:
+            self.set_parameter_requires_grad(model)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, self.num_classes)
+
         return model
+
+    def set_parameter_requires_grad(self, model: nn.Module) -> None:
+        for param in model.parameters():
+            param.requires_grad = False
 
     def forward(self, x) -> torch.Tensor:
         """Method used for inference"""
@@ -97,9 +102,10 @@ class Model(pl.LightningModule):
         preds = torch.argmax(logits, dim=1)
 
         loss = self.loss(logits, y)
-        acc = accuracy(preds, y, task="multiclass", num_classes=self.num_classes)
+        acc = self.metric(preds, y)
+
         return preds, loss, acc
 
-    def configure_optimizers(self) -> torch.optim:
+    def configure_optimizers(self) -> torch.optim.Optimizer:
         """Initialize Adam optimizer"""
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)

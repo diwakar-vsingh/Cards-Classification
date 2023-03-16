@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
+from classifier.callbacks import LogPredictionsCallback
 from classifier.dataset import CardsDataModule
 from classifier.model import Model
 
@@ -41,6 +42,18 @@ from classifier.model import Model
     help="Learning rate for training",
 )
 @click.option(
+    "-p",
+    "--patience",
+    default=5,
+    help="Patience for early stopping",
+)
+@click.option(
+    "-fe",
+    "--feature-extractor",
+    is_flag=True,
+    help="Whether to freeze the feature extractor",
+)
+@click.option(
     "-e",
     "--expt-name",
     required=True,
@@ -51,8 +64,12 @@ def main(
     normalize: bool,
     batch_size: int,
     learning_rate: float,
+    patience: int,
+    feature_extractor: bool,
     expt_name: str,
 ):
+    pl.seed_everything(42)
+
     # Init logger
     wandb_logger = WandbLogger(
         name=expt_name, project="Cards Classifier", log_model="all"
@@ -60,11 +77,11 @@ def main(
 
     # Callbacks
     checkpoint_callback = ModelCheckpoint(monitor="val_acc", mode="max", verbose=True)
+    log_predictions_callback = LogPredictionsCallback(num_samples=10)
     early_stop_callback = EarlyStopping(
         monitor="val_acc",
-        min_delta=0.00,
-        patience=3,
-        verbose=False,
+        patience=patience,
+        verbose=True,
         mode="max",
     )
 
@@ -77,7 +94,9 @@ def main(
     )
 
     # Init model from datamodule's attributes
-    model = Model(num_classes=53, learning_rate=learning_rate)
+    model = Model(
+        num_classes=53, learning_rate=learning_rate, feature_extractor=feature_extractor
+    )
 
     # Init trainer
     trainer = pl.Trainer(
@@ -85,7 +104,7 @@ def main(
         accelerator="auto",
         devices=None,
         logger=wandb_logger,
-        callbacks=[early_stop_callback, checkpoint_callback],
+        callbacks=[early_stop_callback, log_predictions_callback, checkpoint_callback],
     )
 
     # Pass the datamodule as arg to trainer.fit to override model hooks :)
