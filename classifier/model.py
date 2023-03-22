@@ -1,19 +1,18 @@
 from functools import partial
 from typing import Tuple
 
-import pytorch_lightning as pl
+import lightning as L
 import torch
 import torch.nn as nn
 from torchmetrics.functional import accuracy
 from torchvision.models import ResNet18_Weights, resnet18
 
 
-class Model(pl.LightningModule):
+class LitModel(L.LightningModule):
     def __init__(
         self,
         input_shape: Tuple[int, int, int] = (3, 224, 224),
         num_classes: int = 53,
-        hidden_size: int = 64,
         learning_rate: float = 1e-3,
         feature_extractor: bool = False,
     ):
@@ -21,23 +20,18 @@ class Model(pl.LightningModule):
 
         # Init parameters
         self.channels, self.width, self.height = input_shape
-        self.num_classes = num_classes
-        self.hidden_size = hidden_size
+
+        # Save hyperparameters to self.hparams (auto-logged by WandbLogger)
+        self.save_hyperparameters()
 
         # Design model
         self.model = self.create_model(feature_extractor)
 
         # Loss function
-        self.loss = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()
 
         # Metric
-        self.metric = partial(accuracy, task="multiclass", num_classes=self.num_classes)
-
-        # Optimizer Parameters
-        self.learning_rate = learning_rate
-
-        # Save hyperparameters to self.hparams (auto-logged by WandbLogger)
-        self.save_hyperparameters()
+        self.metric = partial(accuracy, task="multiclass", num_classes=num_classes)
 
     def create_model(self, feature_extractor: bool) -> nn.Module:
         """Create model"""
@@ -45,7 +39,7 @@ class Model(pl.LightningModule):
         if feature_extractor:
             self.set_parameter_requires_grad(model)
         num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, self.num_classes)
+        model.fc = nn.Linear(num_ftrs, self.hparams.num_classes)
 
         return model
 
@@ -101,11 +95,11 @@ class Model(pl.LightningModule):
         logits = self(x)
         preds = torch.argmax(logits, dim=1)
 
-        loss = self.loss(logits, y)
+        loss = self.criterion(logits, y)
         acc = self.metric(preds, y)
 
         return preds, loss, acc
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Initialize Adam optimizer"""
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
