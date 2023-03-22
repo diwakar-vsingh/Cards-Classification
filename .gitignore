@@ -5,3 +5,7 @@
 /Cards Classifier/**
 /lightning_logs/**
 /wandb/**
+*.ckpt
+*.json
+*.csv
+*.png
