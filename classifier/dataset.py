@@ -6,7 +6,7 @@ import kaggle
 import pandas as pd
 import torch
 import torchvision.transforms as T
-from pytorch_lightning import LightningDataModule
+from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from torchvision.io import read_image
@@ -171,12 +171,12 @@ class CardsDataModule(LightningDataModule):
             T.RandomPerspective(
                 distortion_scale=0.1, p=0.2, fill=random.uniform(0.0, 1.0)
             ),
-            T.Resize(size=(224, 224)),
+            T.Resize(size=(224, 224), antialias=True),
         ]
         return T.Compose(transforms)
 
     def test_transforms(self) -> Callable:
-        transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224))]
+        transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224), antialias=True)]
         transforms += [T.Normalize(MEAN, STD)] if self.normalize else []
         return T.Compose(transforms)
 
