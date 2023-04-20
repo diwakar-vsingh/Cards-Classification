@@ -1,25 +1,25 @@
 from typing import List, Tuple
 
-import pytorch_lightning as pl
+import lightning as L
 import torch
 from wandb.data_types import Image
 
 import wandb
 
 
-class LogPredictionsCallback(pl.Callback):
+class LogPredictionsCallback(L.Callback):
     def __init__(self, num_samples: int = 20) -> None:
         super().__init__()
         self.num_samples = num_samples
 
     def on_validation_batch_end(
         self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
+        trainer: L.Trainer,
+        pl_module: L.LightningModule,
         outputs: torch.Tensor,
         batch: Tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
-        dataloader_idx: int,
+        dataloader_idx: int = 0,
     ):
         """Called when the validation batch ends."""
 
