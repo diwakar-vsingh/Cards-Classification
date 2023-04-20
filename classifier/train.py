@@ -1,3 +1,4 @@
+import resource
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Union
@@ -8,7 +9,6 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import Logger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
-from classifier.callbacks import LogPredictionsCallback
 from classifier.dataset import CardsDataModule
 from classifier.io_utils import get_most_recently_edited_file
 from classifier.model import LitModel
@@ -50,12 +50,14 @@ CKPT_DIR = Path("checkpoints")
     "-lr",
     "--learning-rate",
     default=1e-5,
+    show_default=True,
     help="Learning rate for training",
 )
 @click.option(
     "-p",
     "--patience",
     default=5,
+    show_default=True,
     help="Patience for early stopping",
 )
 @click.option(
@@ -105,6 +107,11 @@ def main(
     ), "Cannot tune both batch size and learning rate at the same time"
     L.seed_everything(42)
 
+    # Set the soft and hard limits for the maximum number of open files
+    _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    new_soft_limit = 10000
+    resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft_limit, hard_limit))
+
     # Init logger
     logger: Union[Logger, bool] = (
         False
@@ -113,6 +120,12 @@ def main(
     )
 
     # Callbacks
+    early_stop_callback = EarlyStopping(
+        monitor="val_acc",
+        patience=patience,
+        verbose=True,
+        mode="max",
+    )
     checkpoint_callback = ModelCheckpoint(
         monitor="val_acc",
         mode="max",
@@ -120,16 +133,11 @@ def main(
         save_on_train_epoch_end=True,
         auto_insert_metric_name=True,
     )
-    log_predictions_callback = LogPredictionsCallback(num_samples=10)
-    early_stop_callback = EarlyStopping(
-        monitor="val_acc",
-        patience=patience,
-        verbose=True,
-        mode="max",
-    )
     callbacks = [early_stop_callback, checkpoint_callback]
-    if not debug:
-        callbacks.append(log_predictions_callback)
+
+    # log_predictions_callback = LogPredictionsCallback(num_samples=10)
+    # if not debug:
+    #     callbacks.append(log_predictions_callback)
 
     # Load checkpoint
     ckpt = get_most_recently_edited_file(CKPT_DIR) if resume_training else None
@@ -137,7 +145,7 @@ def main(
     # Init DataModule
     dm = CardsDataModule(
         data_dir=data_dir,
-        num_workers=cpu_count(),
+        num_workers=cpu_count() // 2,
         normalize=normalize,
         batch_size=batch_size,
     )
