@@ -41,7 +41,7 @@ CKPT_DIR = Path("checkpoints")
 @click.option(
     "-b",
     "--batch-size",
-    default=64,
+    default=128,
     type=int,
     show_default=True,
     help="Batch size for training",
@@ -49,7 +49,7 @@ CKPT_DIR = Path("checkpoints")
 @click.option(
     "-lr",
     "--learning-rate",
-    default=1e-5,
+    default=1e-4,
     show_default=True,
     help="Learning rate for training",
 )
@@ -64,7 +64,7 @@ CKPT_DIR = Path("checkpoints")
     "-fe",
     "--feature-extractor",
     is_flag=True,
-    help="Whether to freeze the feature extractor",
+    help="If True, only train the classifier head, else train the entire model",
 )
 @click.option(
     "-e",
@@ -152,7 +152,7 @@ def main(
 
     # Init model from datamodule's attributes
     model = LitModel(
-        num_classes=53, learning_rate=learning_rate, feature_extractor=feature_extractor
+        num_classes=53, learning_rate=learning_rate, transfer=feature_extractor
     )
 
     # Init trainer
@@ -171,9 +171,9 @@ def main(
             lr_finder = tuner.lr_find(model, datamodule=dm)
 
             if lr_finder is not None:
-                print("Suggested learning rate: ", lr_finder.results)
+                print(f"Suggested learning rate: {lr_finder.suggestion():.2e}")
 
-                # Plot with
+                # Plot with returned figure, and suggested lr
                 fig = lr_finder.plot(suggest=True)
                 fig.savefig("lr_finder.png")
 
