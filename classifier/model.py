@@ -1,11 +1,11 @@
-from functools import partial
-from typing import Tuple
+from typing import Optional, Tuple
 
 import lightning as L
 import torch
 import torch.nn as nn
-from torchmetrics.functional import accuracy
-from torchvision.models import ResNet18_Weights, resnet18
+import torchmetrics
+from torchvision import models
+from torchvision.models._api import WeightsEnum
 
 
 class LitModel(L.LightningModule):
@@ -14,7 +14,7 @@ class LitModel(L.LightningModule):
         input_shape: Tuple[int, int, int] = (3, 224, 224),
         num_classes: int = 53,
         learning_rate: float = 1e-3,
-        feature_extractor: bool = False,
+        transfer: bool = False,
     ):
         super().__init__()
 
@@ -25,25 +25,39 @@ class LitModel(L.LightningModule):
         self.save_hyperparameters()
 
         # Design model
-        self.model = self.create_model(feature_extractor)
+        self.model = self.create_model()
 
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
 
         # Metric
-        self.metric = partial(accuracy, task="multiclass", num_classes=num_classes)
+        self.metric = torchmetrics.Accuracy(task="multiclass", num_classes=num_classes)
 
-    def create_model(self, feature_extractor: bool) -> nn.Module:
+    def create_model(self) -> nn.Module:
         """Create model"""
-        model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
-        if feature_extractor:
-            self.set_parameter_requires_grad(model)
-        num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, self.hparams.num_classes)
+        weights: Optional[WeightsEnum] = None
+        if self.hparams.transfer:
+            weights = models.ResNet34_Weights.DEFAULT
+        backbone = models.resnet34(weights=weights)
+        if self.hparams.transfer:
+            self.set_parameter_requires_grad(backbone)
 
-        return model
+        num_filters = backbone.fc.in_features
+        layers = list(backbone.children())[:-1]
+
+        self.feature_extractor = nn.Sequential(*layers)
+        self.fc = nn.Sequential(
+            nn.Flatten(1),
+            nn.Dropout(),
+            nn.Linear(num_filters, 512),
+            nn.Dropout(),
+            nn.Linear(512, self.hparams.num_classes),
+        )
+
+        return nn.Sequential(self.feature_extractor, self.fc)
 
     def set_parameter_requires_grad(self, model: nn.Module) -> None:
+        """Freeze feature extractor"""
         for param in model.parameters():
             param.requires_grad = False
 
@@ -96,10 +110,13 @@ class LitModel(L.LightningModule):
         preds = torch.argmax(logits, dim=1)
 
         loss = self.criterion(logits, y)
-        acc = self.metric(preds, y)
+        acc = self.metric(preds, y)  # type: ignore
 
         return preds, loss, acc
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Initialize Adam optimizer"""
-        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
+        return torch.optim.Adam(
+            self.parameters(),
+            lr=self.hparams.learning_rate,
+        )
