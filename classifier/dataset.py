@@ -134,8 +134,8 @@ class CardsDataModule(LightningDataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         # called on every process in DDP
         if stage == "fit" or stage is None:
-            train_transforms = self.train_transform or self.default_transforms()
-            valid_transforms = self.valid_transform or self.test_transforms()
+            train_transforms = self.train_transform or self.augmentation()
+            valid_transforms = self.valid_transform or self.transform()
             self.train_dataset = CardsDataset(
                 self.data_dir, split="train", transform=train_transforms
             )
@@ -144,28 +144,25 @@ class CardsDataModule(LightningDataModule):
             )
 
         if stage == "test" or stage is None:
-            test_transform = self.test_transform or self.test_transforms()
+            test_transform = self.test_transform or self.transform()
             self.test_dataset = CardsDataset(
                 self.data_dir, split="test", transform=test_transform
             )
 
-    def default_transforms(self) -> Callable:
+    def augmentation(self) -> Callable:
         transforms: List[torch.nn.Module] = [
             T.RandomAutocontrast(p=0.2),
             T.RandomAdjustSharpness(sharpness_factor=2.0, p=0.2),
-            T.RandomInvert(p=0.1),
             T.ColorJitter(
-                brightness=0.5, contrast=0.5, saturation=0.5, hue=(-0.5, 0.5)
+                brightness=(1, 2), contrast=0.2, saturation=0.5, hue=(-0.25, 0.25)
             ),
             T.RandomRotation(
-                degrees=(0, 10),
+                degrees=(-10, 10),
                 interpolation=T.InterpolationMode.BILINEAR,
-                fill=random.uniform(0.0, 1.0),
                 expand=True,
+                fill=random.random(),
             ),
-            T.RandomPerspective(
-                distortion_scale=0.1, p=0.2, fill=random.uniform(0.0, 1.0)
-            ),
+            T.RandomPerspective(distortion_scale=0.1, p=0.2, fill=random.random()),
             T.Resize(size=(224, 224), antialias=True),
         ]
         if self.normalize:
@@ -173,13 +170,10 @@ class CardsDataModule(LightningDataModule):
 
         return T.Compose(transforms)
 
-    def test_transforms(self) -> Callable:
+    def transform(self) -> Callable:
         transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224), antialias=True)]
-        transforms += (
-            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-            if self.normalize
-            else []
-        )
+        if self.normalize:
+            transforms += [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         return T.Compose(transforms)
 
     def train_dataloader(self) -> DataLoader:
