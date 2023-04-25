@@ -7,6 +7,8 @@ import torchmetrics
 from torchvision import models
 from torchvision.models._api import WeightsEnum
 
+from classifier.layers import AdaptiveConcatPool2d, apply_init
+
 
 class LitModel(L.LightningModule):
     def __init__(
@@ -37,24 +39,29 @@ class LitModel(L.LightningModule):
         """Create model"""
         weights: Optional[WeightsEnum] = None
         if self.hparams.transfer:
-            weights = models.ResNet34_Weights.DEFAULT
-        backbone = models.resnet34(weights=weights)
+            weights = models.ResNet18_Weights.DEFAULT
+        backbone = models.resnet18(weights=weights)
         if self.hparams.transfer:
             self.set_parameter_requires_grad(backbone)
 
         num_filters = backbone.fc.in_features
         layers = list(backbone.children())[:-1]
 
-        self.feature_extractor = nn.Sequential(*layers)
-        self.fc = nn.Sequential(
+        self.body = nn.Sequential(*layers)
+        self.head = nn.Sequential(
+            AdaptiveConcatPool2d(),
             nn.Flatten(1),
-            nn.Dropout(),
-            nn.Linear(num_filters, 512),
-            nn.Dropout(),
-            nn.Linear(512, self.hparams.num_classes),
+            nn.BatchNorm1d(2 * num_filters),
+            nn.Dropout(p=0.25),
+            nn.Linear(2 * num_filters, 512, bias=False),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm1d(512),
+            nn.Dropout(p=0.25),
+            nn.Linear(512, self.hparams.num_classes, bias=False),
         )
+        apply_init(self.head, nn.init.kaiming_normal_)
 
-        return nn.Sequential(self.feature_extractor, self.fc)
+        return nn.Sequential(self.body, self.head)
 
     def set_parameter_requires_grad(self, model: nn.Module) -> None:
         """Freeze feature extractor"""
