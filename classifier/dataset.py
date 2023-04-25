@@ -198,7 +198,6 @@ class CardsDataModule(LightningDataModule):
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
-            shuffle=self.shuffle,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
         )

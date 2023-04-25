@@ -160,6 +160,7 @@ def main(
         max_epochs=-1,
         accelerator="mps",
         logger=logger,
+        log_every_n_steps=25,
         callbacks=callbacks,
     )
     if tune_batch_size or tune_learning_rate:
