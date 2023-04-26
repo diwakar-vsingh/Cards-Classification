@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import lightning as L
 import torch
@@ -7,9 +7,23 @@ import torchmetrics
 from torchvision.models import get_model
 
 import wandb
-from classifier.layers import AdaptiveConcatPool2d
 
 RESNETS: Tuple[str, ...] = ("resnet18", "resnet34", "resnet50", "resnet101")
+
+
+class AdaptiveConcatPool2d(nn.Module):
+    "Layer that concats `AdaptiveAvgPool2d` and `AdaptiveMaxPool2d`"
+
+    def __init__(
+        self, size: Optional[Union[int, Tuple[Optional[int], Optional[int]]]] = None
+    ) -> None:
+        super().__init__()
+        self.size = size or 1
+        self.ap = nn.AdaptiveAvgPool2d(self.size)
+        self.mp = nn.AdaptiveMaxPool2d(self.size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.cat([self.mp(x), self.ap(x)], dim=1)
 
 
 class LitModel(L.LightningModule):
@@ -55,15 +69,12 @@ class LitModel(L.LightningModule):
             AdaptiveConcatPool2d(),
             nn.Flatten(1),
             nn.ReLU(),
-            # nn.BatchNorm1d(2 * num_filters),
             nn.Dropout(p=0.25),
             nn.Linear(2 * num_filters, 512, bias=False),
             nn.ReLU(),
-            # nn.BatchNorm1d(512),
             nn.Dropout(p=0.5),
             nn.Linear(512, self.hparams.num_classes, bias=False),
         )
-        # apply_init(self.head, nn.init.kaiming_normal_)
 
         return nn.Sequential(self.body, self.head)
 
@@ -80,6 +91,10 @@ class LitModel(L.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Needs to return loss for a single batch"""
+        if self.trainer.global_step == 0:
+            wandb.define_metric("train_acc", summary="mean")  # type: ignore
+            wandb.define_metric("train_loss", summary="mean")  # type: ignore
+
         _, loss, acc = self._get_preds_loss_acc(batch)
 
         # Log loss and metric
@@ -93,8 +108,6 @@ class LitModel(L.LightningModule):
     ) -> torch.Tensor:
         """Used for logging metrics"""
         if self.trainer.global_step == 0:
-            wandb.define_metric("train_acc", summary="mean")  # type: ignore
-            wandb.define_metric("train_loss", summary="mean")  # type: ignore
             wandb.define_metric("val_acc", summary="mean")  # type: ignore
             wandb.define_metric("val_loss", summary="mean")  # type: ignore
 
@@ -134,7 +147,7 @@ class LitModel(L.LightningModule):
 
     def configure_optimizers(self) -> Dict[str, Any]:
         """Configure optimizer and/or learning rate scheduler"""
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4
         )
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
