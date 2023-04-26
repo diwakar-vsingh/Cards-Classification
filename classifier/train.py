@@ -1,7 +1,7 @@
 import resource
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import click
 import lightning as L
@@ -13,6 +13,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import Logger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
+from classifier.callbacks import LogPredictionsCallback
 from classifier.dataset import CardsDataModule
 from classifier.io_utils import get_most_recently_edited_file
 from classifier.model import LitModel
@@ -35,6 +36,13 @@ CKPT_DIR = Path("checkpoints")
     default=False,
     is_flag=True,
     help="Whether to normalize the data",
+)
+@click.option(
+    "-c",
+    "--ckpt",
+    default=None,
+    type=click.Path(),
+    help="Path to the checkpoint to resume training from",
 )
 @click.option(
     "-r",
@@ -110,6 +118,7 @@ CKPT_DIR = Path("checkpoints")
 def main(
     data_dir: Path,
     normalize: bool,
+    ckpt: Optional[Path],
     resume_training: bool,
     arch: str,
     pretrained: bool,
@@ -149,12 +158,14 @@ def main(
     lr_monitor = LearningRateMonitor()
     callbacks = [early_stop_callback, checkpoint_callback, lr_monitor]
 
-    # log_predictions_callback = LogPredictionsCallback(num_samples=10)
-    # if not debug:
-    #     callbacks.append(log_predictions_callback)
+    log_predictions_callback = LogPredictionsCallback(num_samples=10)
+    if not debug:
+        callbacks.append(log_predictions_callback)
 
     # Load checkpoint
-    ckpt = get_most_recently_edited_file(CKPT_DIR) if resume_training else None
+    ckpt = ckpt or (
+        get_most_recently_edited_file(CKPT_DIR) if resume_training else None
+    )
 
     # Init DataModule
     dm = CardsDataModule(
@@ -179,7 +190,6 @@ def main(
         logger = WandbLogger(
             name=expt_name, project="Cards Classifier", log_model="all"
         )
-        logger.watch(model.model, log="all", log_freq=100)
 
     # Init trainer
     trainer = L.Trainer(
@@ -214,8 +224,11 @@ def main(
             # Auto-scale batch size with binary search
             tuner.scale_batch_size(model, mode="power", datamodule=dm)
 
-    # Pass the datamodule as arg to trainer.fit to override model hooks :)
+    # Train the model ⚡🚅⚡
     trainer.fit(model, datamodule=dm, ckpt_path=ckpt)
+
+    # Evaluate the model on the held-out test set ⚡⚡
+    trainer.test()
 
 
 if __name__ == "__main__":

@@ -42,4 +42,5 @@ class LogPredictionsCallback(L.Callback):
                     )
                 )
             ]
-            trainer.logger.log_table(key="sample_table", columns=columns, data=data)
+
+            trainer.logger.log_table(key="predictions", columns=columns, data=data)
