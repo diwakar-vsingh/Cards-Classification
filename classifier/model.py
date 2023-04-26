@@ -4,10 +4,12 @@ import lightning as L
 import torch
 import torch.nn as nn
 import torchmetrics
-from torchvision import models
-from torchvision.models._api import WeightsEnum
+from torchvision.models import get_model
 
+import wandb
 from classifier.layers import AdaptiveConcatPool2d
+
+RESNETS: Tuple[str, ...] = ("resnet18", "resnet34", "resnet50", "resnet101")
 
 
 class LitModel(L.LightningModule):
@@ -15,7 +17,9 @@ class LitModel(L.LightningModule):
         self,
         input_shape: Tuple[int, int, int] = (3, 224, 224),
         num_classes: int = 53,
+        arch: str = "resnet34",
         learning_rate: float = 1e-3,
+        pretrained: bool = True,
         transfer: bool = False,
     ):
         super().__init__()
@@ -27,7 +31,7 @@ class LitModel(L.LightningModule):
         self.save_hyperparameters()
 
         # Design model
-        self.model = self.create_model()
+        self.model = self.create_model(arch)
 
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
@@ -35,12 +39,11 @@ class LitModel(L.LightningModule):
         # Metric
         self.metric = torchmetrics.Accuracy(task="multiclass", num_classes=num_classes)
 
-    def create_model(self) -> nn.Module:
+    def create_model(self, arch: str) -> nn.Module:
         """Create model"""
-        weights: Optional[WeightsEnum] = None
-        if self.hparams.transfer:
-            weights = models.ResNet34_Weights.DEFAULT
-        backbone = models.resnet34(weights=weights)
+        weights: Optional[str] = "DEFAULT" if self.hparams.pretrained else None
+        assert arch in RESNETS, f"Only {RESNETS} are supported, got {arch}"
+        backbone = get_model(arch, weights=weights)
         if self.hparams.transfer:
             self.set_parameter_requires_grad(backbone)
 
@@ -90,10 +93,10 @@ class LitModel(L.LightningModule):
     ) -> torch.Tensor:
         """Used for logging metrics"""
         if self.trainer.global_step == 0:
-            self.logger.define_metric("train_acc", summary="mean")
-            self.logger.define_metric("train_loss", summary="mean")
-            self.logger.define_metric("val_acc", summary="mean")
-            self.logger.define_metric("val_loss", summary="mean")
+            wandb.define_metric("train_acc", summary="mean")  # type: ignore
+            wandb.define_metric("train_loss", summary="mean")  # type: ignore
+            wandb.define_metric("val_acc", summary="mean")  # type: ignore
+            wandb.define_metric("val_loss", summary="mean")  # type: ignore
 
         preds, loss, acc = self._get_preds_loss_acc(batch)
 
@@ -125,7 +128,7 @@ class LitModel(L.LightningModule):
         preds = torch.argmax(logits, dim=1)
 
         loss = self.criterion(logits, y)
-        acc = self.metric(preds, y)
+        acc = self.metric(preds, y)  # type: ignore
 
         return preds, loss, acc
 
