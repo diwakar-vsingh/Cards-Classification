@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple, Union
 
 import lightning as L
@@ -64,8 +65,8 @@ class LitModel(L.LightningModule):
         num_filters = backbone.fc.in_features
         layers = list(backbone.children())[:-1]
 
-        self.body = nn.Sequential(*layers)
-        self.head = nn.Sequential(
+        body = nn.Sequential(*layers)
+        head = nn.Sequential(
             AdaptiveConcatPool2d(),
             nn.Flatten(1),
             nn.ReLU(),
@@ -76,7 +77,7 @@ class LitModel(L.LightningModule):
             nn.Linear(512, self.hparams.num_classes, bias=False),
         )
 
-        return nn.Sequential(self.body, self.head)
+        return nn.Sequential(OrderedDict([("body", body), ("head", head)]))
 
     def set_parameter_requires_grad(self, model: nn.Module) -> None:
         """Freeze feature extractor"""
@@ -148,8 +149,14 @@ class LitModel(L.LightningModule):
     def configure_optimizers(self) -> Dict[str, Any]:
         """Configure optimizer and/or learning rate scheduler"""
         optimizer = torch.optim.AdamW(
-            self.parameters(), lr=self.hparams.learning_rate, weight_decay=1e-4
+            [
+                {"params": self.model.body.parameters(), "lr": self.hparams.learning_rate / 10},  # type: ignore
+                {"params": self.model.head.parameters()},  # type: ignore
+            ],
+            lr=self.hparams.learning_rate,
+            weight_decay=1e-4,
         )
+
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode="max", factor=0.5, patience=2, verbose=True
         )
