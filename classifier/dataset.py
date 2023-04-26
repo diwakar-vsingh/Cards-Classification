@@ -11,6 +11,8 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import VisionDataset
 from torchvision.io import read_image
 
+from classifier.constant import MEAN, STD
+
 
 def download_kaggle_dataset(dataset_name: str, dataset_path: Path) -> None:
     """Download a dataset from Kaggle and unzip it.
@@ -153,8 +155,9 @@ class CardsDataModule(LightningDataModule):
         transforms: List[torch.nn.Module] = [
             T.RandomAutocontrast(p=0.2),
             T.RandomAdjustSharpness(sharpness_factor=2.0, p=0.2),
+            T.RandomInvert(p=0.1),
             T.ColorJitter(
-                brightness=(1, 2), contrast=0.2, saturation=0.5, hue=(-0.25, 0.25)
+                brightness=(1, 2), contrast=0.5, saturation=0.5, hue=(-0.25, 0.25)
             ),
             T.RandomRotation(
                 degrees=(-10, 10),
@@ -166,14 +169,14 @@ class CardsDataModule(LightningDataModule):
             T.Resize(size=(224, 224), antialias=True),
         ]
         if self.normalize:
-            transforms += [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+            transforms += [T.Normalize(MEAN, STD)]
 
         return T.Compose(transforms)
 
     def transform(self) -> Callable:
         transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224), antialias=True)]
         if self.normalize:
-            transforms += [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+            transforms += [T.Normalize(MEAN, STD)]
         return T.Compose(transforms)
 
     def train_dataloader(self) -> DataLoader:
