@@ -5,7 +5,11 @@ from typing import Union
 
 import click
 import lightning as L
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
 from lightning.pytorch.loggers import Logger, WandbLogger
 from lightning.pytorch.tuner import Tuner
 
@@ -39,6 +43,26 @@ CKPT_DIR = Path("checkpoints")
     help="Whether to resume training from the most recent checkpoint",
 )
 @click.option(
+    "-a",
+    "--arch",
+    default="resnet34",
+    show_default=True,
+    type=click.Choice(["resnet18", "resnet34", "resnet50", "resnet101"]),
+    help="Architecture of the model to train",
+)
+@click.option(
+    "-pt",
+    "--pretrained",
+    is_flag=True,
+    help="Whether to use a pretrained model",
+)
+@click.option(
+    "-fe",
+    "--feature-extractor",
+    is_flag=True,
+    help="If True, only train the classifier head, else train the entire model",
+)
+@click.option(
     "-b",
     "--batch-size",
     default=128,
@@ -61,12 +85,6 @@ CKPT_DIR = Path("checkpoints")
     help="Patience for early stopping",
 )
 @click.option(
-    "-fe",
-    "--feature-extractor",
-    is_flag=True,
-    help="If True, only train the classifier head, else train the entire model",
-)
-@click.option(
     "-e",
     "--expt-name",
     required=True,
@@ -78,29 +96,31 @@ CKPT_DIR = Path("checkpoints")
     help="Whether to run in debug mode. This will turn off Wandb logging",
 )
 @click.option(
-    "-tb",
-    "--tune-batch-size",
-    is_flag=True,
-    help="Whether to tune the batch size",
-)
-@click.option(
     "-tlr",
     "--tune-learning-rate",
     is_flag=True,
     help="Whether to tune the learning rate",
 )
+@click.option(
+    "-tb",
+    "--tune-batch-size",
+    is_flag=True,
+    help="Whether to tune the batch size",
+)
 def main(
     data_dir: Path,
     normalize: bool,
     resume_training: bool,
+    arch: str,
+    pretrained: bool,
+    feature_extractor: bool,
     batch_size: int,
     learning_rate: float,
     patience: int,
-    feature_extractor: bool,
     expt_name: str,
     debug: bool,
-    tune_batch_size: bool,
     tune_learning_rate: bool,
+    tune_batch_size: bool,
 ):
     assert not (
         tune_batch_size and tune_learning_rate
@@ -111,13 +131,6 @@ def main(
     _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
     new_soft_limit = 10000
     resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft_limit, hard_limit))
-
-    # Init logger
-    logger: Union[Logger, bool] = (
-        False
-        if debug
-        else WandbLogger(name=expt_name, project="Cards Classifier", log_model="all")
-    )
 
     # Callbacks
     early_stop_callback = EarlyStopping(
@@ -133,7 +146,8 @@ def main(
         save_on_train_epoch_end=True,
         auto_insert_metric_name=True,
     )
-    callbacks = [early_stop_callback, checkpoint_callback]
+    lr_monitor = LearningRateMonitor()
+    callbacks = [early_stop_callback, checkpoint_callback, lr_monitor]
 
     # log_predictions_callback = LogPredictionsCallback(num_samples=10)
     # if not debug:
@@ -152,8 +166,20 @@ def main(
 
     # Init model from datamodule's attributes
     model = LitModel(
-        num_classes=53, learning_rate=learning_rate, transfer=feature_extractor
+        num_classes=53,
+        learning_rate=learning_rate,
+        arch=arch,
+        pretrained=pretrained,
+        transfer=feature_extractor,
     )
+
+    # Init logger
+    logger: Union[Logger, bool] = False
+    if not debug:
+        logger = WandbLogger(
+            name=expt_name, project="Cards Classifier", log_model="all"
+        )
+        logger.watch(model.model, log="all", log_freq=100)
 
     # Init trainer
     trainer = L.Trainer(
