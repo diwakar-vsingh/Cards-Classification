@@ -38,7 +38,7 @@ CKPT_DIR = Path("checkpoints")
     help="Whether to normalize the data",
 )
 @click.option(
-    "-c",
+    "-ck",
     "--ckpt",
     default=None,
     type=click.Path(),
@@ -49,6 +49,12 @@ CKPT_DIR = Path("checkpoints")
     "--resume-training",
     is_flag=True,
     help="Whether to resume training from the most recent checkpoint",
+)
+@click.option(
+    "-ev",
+    "--evaluate",
+    is_flag=True,
+    help="Whether to evaluate the model on the test set",
 )
 @click.option(
     "-a",
@@ -120,6 +126,7 @@ def main(
     normalize: bool,
     ckpt: Optional[Path],
     resume_training: bool,
+    evaluate: bool,
     arch: str,
     pretrained: bool,
     feature_extractor: bool,
@@ -176,13 +183,16 @@ def main(
     )
 
     # Init model from datamodule's attributes
-    model = LitModel(
-        num_classes=53,
-        learning_rate=learning_rate,
-        arch=arch,
-        pretrained=pretrained,
-        transfer=feature_extractor,
-    )
+    model_kwargs = {
+        "num_classes": 53,
+        "learning_rate": learning_rate,
+        "arch": arch,
+        "pretrained": pretrained,
+        "transfer": feature_extractor,
+    }
+    model: L.LightningModule = LitModel(**model_kwargs)  # type: ignore
+    if ckpt is not None:
+        model = LitModel.load_from_checkpoint(ckpt, **model_kwargs)
 
     # Init logger
     logger: Union[Logger, bool] = False
@@ -224,11 +234,12 @@ def main(
             # Auto-scale batch size with binary search
             tuner.scale_batch_size(model, mode="power", datamodule=dm)
 
-    # Train the model ⚡🚅⚡
-    trainer.fit(model, datamodule=dm, ckpt_path=ckpt)
+    if not evaluate:
+        # Train the model ⚡🚅⚡
+        trainer.fit(model, datamodule=dm, ckpt_path=ckpt)
 
     # Evaluate the model on the held-out test set ⚡⚡
-    trainer.test()
+    trainer.test(model, datamodule=dm)
 
 
 if __name__ == "__main__":
