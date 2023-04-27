@@ -92,10 +92,6 @@ class LitModel(L.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Needs to return loss for a single batch"""
-        if self.trainer.global_step == 0:
-            wandb.define_metric("train_acc", summary="mean")  # type: ignore
-            wandb.define_metric("train_loss", summary="mean")  # type: ignore
-
         _, loss, acc = self._get_preds_loss_acc(batch)
 
         # Log loss and metric
