@@ -150,7 +150,8 @@ class LitModel(L.LightningModule):
         """Configure optimizer and/or learning rate scheduler"""
         optimizer = torch.optim.AdamW(
             [
-                {"params": self.model.body.parameters(), "lr": self.hparams.learning_rate / 10},  # type: ignore
+                {"params": self.model.body[:6].parameters(), "lr": self.hparams.learning_rate / 10},  # type: ignore
+                {"params": self.model.body[6:].parameters(), "lr": self.hparams.learning_rate / 2},  # type: ignore
                 {"params": self.model.head.parameters()},  # type: ignore
             ],
             lr=self.hparams.learning_rate,
