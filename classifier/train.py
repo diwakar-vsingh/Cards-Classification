@@ -31,13 +31,6 @@ CKPT_DIR = Path("checkpoints")
     help="Path to the data directory",
 )
 @click.option(
-    "-n",
-    "--normalize",
-    default=False,
-    is_flag=True,
-    help="Whether to normalize the data",
-)
-@click.option(
     "-ck",
     "--ckpt",
     default=None,
@@ -123,7 +116,6 @@ CKPT_DIR = Path("checkpoints")
 )
 def main(
     data_dir: Path,
-    normalize: bool,
     ckpt: Optional[Path],
     resume_training: bool,
     evaluate: bool,
@@ -141,7 +133,7 @@ def main(
     assert not (
         tune_batch_size and tune_learning_rate
     ), "Cannot tune both batch size and learning rate at the same time"
-    L.seed_everything(42)
+    L.seed_everything(42, workers=True)
 
     # Set the soft and hard limits for the maximum number of open files
     _, hard_limit = resource.getrlimit(resource.RLIMIT_NOFILE)
@@ -178,7 +170,6 @@ def main(
     dm = CardsDataModule(
         data_dir=data_dir,
         num_workers=cpu_count() // 2,
-        normalize=normalize,
         batch_size=batch_size,
     )
 
@@ -198,7 +189,7 @@ def main(
     logger: Union[Logger, bool] = False
     if not debug:
         logger = WandbLogger(
-            name=expt_name, project="Cards Classifier", log_model="all"
+            name=expt_name, project="Cards-Classifier", log_model="all"
         )
 
     # Init trainer
@@ -208,6 +199,7 @@ def main(
         logger=logger,
         log_every_n_steps=25,
         callbacks=callbacks,
+        benchmark=True,
     )
     if tune_batch_size or tune_learning_rate:
         # Init tuner

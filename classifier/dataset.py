@@ -94,7 +94,6 @@ class CardsDataModule(LightningDataModule):
         self,
         data_dir: Path,
         num_workers: int = 8,
-        normalize: bool = True,
         batch_size: int = 8,
         shuffle: bool = True,
         pin_memory: bool = False,
@@ -107,7 +106,6 @@ class CardsDataModule(LightningDataModule):
         Args:
             data_dir: Path to the dataset directory containing the train, valid, and test folders
             num_workers: Number of workers to use for loading the data
-            normalize: If True, normalizes the data using the mean and standard deviation of the training set
             batch_size: Batch size to use for training, validation, and testing
             shuffle: If True, shuffles the train data at every epoch
             pin_memory: If True, the data loader will copy Tensors into CUDA pinned memory before returning them
@@ -116,7 +114,6 @@ class CardsDataModule(LightningDataModule):
         super().__init__()
         self.data_dir = data_dir
         self.num_workers = num_workers
-        self.normalize = normalize
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.pin_memory = pin_memory
@@ -167,16 +164,15 @@ class CardsDataModule(LightningDataModule):
             ),
             T.RandomPerspective(distortion_scale=0.1, p=0.2, fill=random.random()),
             T.Resize(size=(224, 224), antialias=True),
+            T.Normalize(MEAN, STD),
         ]
-        if self.normalize:
-            transforms += [T.Normalize(MEAN, STD)]
-
         return T.Compose(transforms)
 
     def transform(self) -> Callable:
-        transforms: List[torch.nn.Module] = [T.Resize(size=(224, 224), antialias=True)]
-        if self.normalize:
-            transforms += [T.Normalize(MEAN, STD)]
+        transforms: List[torch.nn.Module] = [
+            T.Resize(size=(224, 224), antialias=True),
+            T.Normalize(MEAN, STD),
+        ]
         return T.Compose(transforms)
 
     def train_dataloader(self) -> DataLoader:
